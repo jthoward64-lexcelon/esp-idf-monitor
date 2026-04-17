@@ -462,7 +462,8 @@ class ArgFormatter(string.Formatter):
         elif specifier == 'p':
             return '#x'
         else:
-            raise ValueError(f'Unsupported format specifier: {specifier}')
+            warning_print(f'Unsupported format specifier: {specifier}. Treating as string.')
+            return 's'
 
     def c_format(self, fmt: str, args: Any) -> str:
         """Format a C-style string using Python's format method."""
@@ -472,16 +473,44 @@ class ArgFormatter(string.Formatter):
         while i_str < len(fmt):
             match = self.c_format_regex.search(fmt, i_str)
             if not match:
-                break
-            py_format = self.convert_to_pythonic_format(match)
-            if match.group(0) == '%%':
-                # Literal percent sign, no need to format
-                formatted_str = '%'
-            else:
-                formatted_str = self.format(py_format, args[i_arg] if args else None)  # This will call format_field()
+                # Check for unsupported format specifier: % followed by any char (not handled by regex)
+                percent_idx = fmt.find('%', i_str)
+                if percent_idx == -1 or percent_idx == len(fmt) - 1:
+                    # No more percent or percent at end
+                    break
+                next_char = fmt[percent_idx + 1]
+                if next_char == '%':
+                    # Literal percent, skip
+                    result_parts.append(fmt[i_str:percent_idx] + '%')
+                    i_str = percent_idx + 2
+                    continue
+                # Treat as unsupported specifier, substitute as string
+                warning_print(f'Unsupported format specifier: {next_char}. Treating as string.')
+                subst = str(args[i_arg]) if args and i_arg < len(args) else ''
+                result_parts.append(fmt[i_str:percent_idx] + subst)
                 i_arg += 1
-            result_parts.append(fmt[i_str : match.start()] + formatted_str)
-            i_str = match.end()
+                i_str = percent_idx + 2
+                continue
+            try:
+                py_format = self.convert_to_pythonic_format(match)
+                if match.group(0) == '%%':
+                    # Literal percent sign, no need to format
+                    formatted_str = '%'
+                else:
+                    formatted_str = self.format(
+                        py_format, args[i_arg] if args else None
+                    )  # This will call format_field()
+                    i_arg += 1
+                result_parts.append(fmt[i_str : match.start()] + formatted_str)
+                i_str = match.end()
+            except Exception as e:
+                # If any error occurs during formatting, include the original format specifier in the output
+                warning_print(
+                    f'Error formatting argument {i_arg} with format "{match.group(0)}":'
+                    + f' {e}. Including original format in output.'
+                )
+                result_parts.append(fmt[i_str : match.end()])
+                i_str = match.end()
         # Add remaining part of the string after last match
         result_parts.append(fmt[i_str:])
         return ''.join(result_parts)

@@ -760,6 +760,22 @@ class TestCStyleConversion(TestBaseClass):
         formatted_output = formatter.c_format(c_fmt, [arg])
         assert formatted_output == output, f"Expected '{output}', got '{formatted_output}'"
 
+    @pytest.mark.parametrize(
+        'c_fmt, args, expected_output',
+        [
+            # Case: unsupported format specifier (should warn and treat as string)
+            ('|%z|', ['test'], '|test|'),
+            # Case: literal percent sign (should output '%')
+            ('Value: %%', [], 'Value: %'),
+        ],
+    )
+    def test_c_format_edge_cases(self, c_fmt, args, expected_output):
+        from esp_idf_monitor.base.binlog import ArgFormatter
+
+        formatter = ArgFormatter()
+        output = formatter.c_format(c_fmt, args)
+        assert output == expected_output
+
 
 class TestEmbeddedMonitorCommands:
     """Tests for SecureMonitorCommandExecutor handling embedded monitor commands."""
